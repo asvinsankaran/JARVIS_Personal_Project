@@ -1,5 +1,6 @@
 #include <util/atomic.h> // For the ATOMIC_BLOCK macro
 #include <math.h>
+#include <Arduino.h>
 
 #define ENC1A 19// YELLOW
 #define ENC1B 25// GREEN
@@ -9,6 +10,9 @@
 #define ENC3B 23 // GREEN
 #define ENC4A 20// YELLOW
 #define ENC4B 22 // GREEN
+
+long int NS = 37370;
+long int EW = 30590;
 
 #define PI 3.1415926535897932384626433832795
 float A = 32100;
@@ -27,25 +31,35 @@ volatile bool reach1 = 0;
 int move = 0;
 int move2 = 0;
 
-int destinationm1234[4] = {10000, 10000, 10000, 10000};
-int errorm1234[4] = {0, 0, 0, 0};
+long int destinationm1234[4] = {10000, 10000, 10000, 10000};
+long int errorm1234[4] = {0, 0, 0, 0};
 int reachm1234[4] = {0, 0, 0, 0}; //0 means NOT reached
 int allreached = 0;
 
-volatile float destinationy = 0;
-volatile float destinationz = 0;
-float pidsc1 = 0;
-float pidsc2 = 0;
-float pidsc3 = 0;
-float pidsc4 = 0;
+float alpha = 0.1;
+int maxIterations = 100;
+float epsilon = 0.001;
+//initial guess
+float moduleLocation[3] = {100.0, 100.0, 100.0};//This is the xyz position of the module
 
-float radius1 = 0;
-float radius2 = 0;
 
-volatile float pos1 = 1; //Volatile means any reference of the variable updates the value
-volatile float pos2 = 1;
-volatile float pos3 = 1; 
-volatile float pos4 = 1;
+float cornerLocations[4][3] = {{0,EW,0},{0,0,0},{NS,EW,0},{NS,0,0}};  // Coordinates of each corner
+volatile float wireRadii[4] = {1, 1, 1, 1};  
+
+float pidsc[4] = {0, 0, 0,0}
+// float pidsc[0] = 0;
+// float pidsc[1] = 0;
+// float pidsc[2] = 0;
+// float pidsc[3] = 0;
+
+long int x = 0;
+long int y = 0;
+long int z = 0;
+
+// volatile long int wireRadii[0] = 1; //Volatile means any reference of the variable updates the value
+// volatile long int wireRadii[1] = 1;
+// volatile long int wireRadii[2] = 1; 
+// volatile long int wireRadii[3] = 1;
 
 void setup() {
   Serial.begin(57600);
@@ -74,21 +88,23 @@ void setup() {
   Serial.println("Setup Complete");
   delay(1000);
   state = 11;
+  x = 10000;
+  y = 10000;
+  z = 5000;
 }
 
 void loop() {
   Serial.println(state);
-  delay(100);
 
   switch (state) {
     case 3:
-      Serial.print(pos1);
+      Serial.print(wireRadii[0]);
       Serial.print("   -   ");
-      Serial.print(pos2);
+      Serial.print(wireRadii[1]);
       Serial.print("   -   ");
-      Serial.print(pos3);
+      Serial.print(wireRadii[2]);
       Serial.print("   -   ");
-      Serial.println(pos4);
+      Serial.println(wireRadii[3]);
       allreached = reachm1234[0]+reachm1234[1]+reachm1234[2]+reachm1234[3];
       if (allreached == 4){
         state = 11;
@@ -101,7 +117,6 @@ void loop() {
       }
       else{
         Serial.println("Move Motors");
-        delay(100);
         movemotors2();
       }
       break;
@@ -110,6 +125,13 @@ void loop() {
       Serial.println("entered case 11");
       while(Serial.available() == 0) {
         Serial.println("move motors: ");
+        Serial.print(wireRadii[0]);
+        Serial.print("   -   ");
+        Serial.print(wireRadii[1]);
+        Serial.print("   -   ");
+        Serial.print(wireRadii[2]);
+        Serial.print("   -   ");
+        Serial.println(wireRadii[3]);
       }
       move = Serial.parseInt();
       while (Serial.available() > 0) {
@@ -153,7 +175,7 @@ void loop() {
           state = 12;
           break;
         case 77:
-          state = 3;
+          state = 13;
           break;
         default:
           Serial.println("default---------------------------");
@@ -181,28 +203,40 @@ void loop() {
       }
       switch(move2){
         case 1: //next to motor 1
-          pos1 = 10;
+          wireRadii[0] = 10;
           state = 11;
           Serial.flush();
           delay(100);
           break;
         case 2: //next to motor 2
-          pos2 = 10;
+          wireRadii[1] = 10;
           state = 11;
           Serial.flush();
           delay(100);
           break;
         case 3: //next to motor 3
-          pos3 = 10;
+          wireRadii[2] = 10;
           state = 11;
           Serial.flush();
           delay(100);
           break;
         case 4: //next to motor 4
-          pos4 = 10;
+          wireRadii[3] = 10;
           state = 11;
           Serial.flush();
           delay(100);
+          break;
+        case 5:
+          Serial.println("Writing position by hand");
+          // wireRadii[0] = 25056;
+          // wireRadii[1] = 17307;
+          // wireRadii[2] = 35721;
+          // wireRadii[3] = 35713;
+          wireRadii[0] = 17933;
+          wireRadii[1] = 190;
+          wireRadii[2] = 38132;
+          wireRadii[3] = 27614;
+          state = 14;
           break;
         default:
           break;
@@ -210,6 +244,25 @@ void loop() {
       Serial.flush();
       break;
     
+    case 13:
+      destinationm1234[0] = sqrt(sq(abs(x-0))+sq(abs(y-EW))+sq(abs(z-0)));
+      destinationm1234[1] = sqrt(sq(abs(x-0))+sq(abs(y-0))+sq(abs(z-0)));
+      destinationm1234[2] = sqrt(sq(abs(x-NS))+sq(abs(y-EW))+sq(abs(z-0)));
+      destinationm1234[3] = sqrt(sq(abs(x-NS))+sq(abs(y-EW))+sq(abs(z-0)));
+
+      Serial.print(destinationm1234[0]);
+      Serial.print("   -   ");
+      Serial.print(destinationm1234[1]);
+      Serial.print("   -   ");
+      Serial.print(destinationm1234[2]);
+      Serial.print("   -   ");
+      Serial.println(destinationm1234[3]);
+      delay(1000);
+      state = 3;
+      break;
+    case 14:
+      getXYZPosition();
+      break;
     default:
       Serial.println("Default");
       break;
@@ -220,72 +273,70 @@ void loop() {
 void readEncoder1(){
   int b = digitalRead(ENC1B);
   if(b > 0){
-    pos1++;
+    wireRadii[0]--;
   }
   else{
-    pos1--;
+    wireRadii[0]++;
   }
 }
 
 void readEncoder2(){
   int b = digitalRead(ENC2B);
   if(b > 0){
-    pos2--;
+    wireRadii[1]++;
   }
   else{
-    pos2++;
+    wireRadii[1]--;
   }
 }
 
 void readEncoder3(){
   int b = digitalRead(ENC3B);
   if(b > 0){
-    pos3++;
+    wireRadii[2]--;
   }
   else{
-    pos3--;
+    wireRadii[2]++;
   }
 }
 
 void readEncoder4(){
   int b = digitalRead(ENC4B);
   if(b > 0){
-    pos4--;
+    wireRadii[3]++;
   }
   else{
-    pos4++;
+    wireRadii[3]--;
   }
 }
 
-
-
 void movemotors2(){
-  errorm1234[0] = abs(pos1) - destinationm1234[0]; //if greater than zero, pull in
-  errorm1234[1] = abs(pos2) - destinationm1234[1];
-  errorm1234[2] = abs(pos3) - destinationm1234[2];
-  errorm1234[3] = abs(pos4) - destinationm1234[3];
+  errorm1234[0] = abs(wireRadii[0]) - destinationm1234[0]; //if greater than zero, pull in
+  errorm1234[1] = abs(wireRadii[1]) - destinationm1234[1];
+  errorm1234[2] = abs(wireRadii[2]) - destinationm1234[2];
+  errorm1234[3] = abs(wireRadii[3]) - destinationm1234[3];
 
   //if error is small, its reached
-  pidsc1 = (errorm1234[0])/abs(errorm1234[0])*250;
-  pidsc2 = (errorm1234[1])/abs(errorm1234[1])*250;
-  pidsc3 = (errorm1234[2])/abs(errorm1234[2])*250;
-  pidsc4 = (errorm1234[3])/abs(errorm1234[3])*250;
+  pidsc[0] = (errorm1234[0])/abs(errorm1234[0])*250;
+  pidsc[1] = (errorm1234[1])/abs(errorm1234[1])*250;
+  pidsc[2] = (errorm1234[2])/abs(errorm1234[2])*250;
+  pidsc[3] = (errorm1234[3])/abs(errorm1234[3])*250;
 
-  if (abs(errorm1234[0]) < 50 || reachm1234[0] == 1){
+  if (abs(errorm1234[0]) < 100 || reachm1234[0] == 1){
     reachm1234[0] = 1;
-    pidsc1 = 0;
+    pidsc[0] = 0;
   }
-  if (abs(errorm1234[1]) < 50 || reachm1234[1] == 1){
+  if (abs(errorm1234[1]) < 100 || reachm1234[1] == 1){
     reachm1234[1] = 1;
-    pidsc2 = 0;
+    pidsc[1] = 0;
   }
-  if (abs(errorm1234[2]) < 50 || reachm1234[2] == 1){
+  if (abs(errorm1234[2]) < 100 || reachm1234[2] == 1){
     reachm1234[2] = 1;
-    pidsc3 = 0;
+    pidsc[2] = 0;
   }
-  if (abs(errorm1234[3]) < 50 || reachm1234[3] == 1){
+  if (abs(errorm1234[3]) < 100 || reachm1234[3] == 1){
     reachm1234[3] = 1;
-    pidsc4 = 0;
+    pidsc[3] = 0;
   }
   Serial.print(errorm1234[0]);
   Serial.print("   -   ");
@@ -295,15 +346,15 @@ void movemotors2(){
   Serial.print("   -   ");
   Serial.println(errorm1234[3]);
 
-  Serial.print(pidsc1);
+  Serial.print(pidsc[0]);
   Serial.print("   -   ");
-  Serial.print(pidsc2);
+  Serial.print(pidsc[1]);
   Serial.print("   -   ");
-  Serial.print(pidsc3);
+  Serial.print(pidsc[2]);
   Serial.print("   -   ");
-  Serial.println(pidsc4);
+  Serial.println(pidsc[3]);
 
-  if(pidsc1>0){
+  if(pidsc[0]>0){
     delay(20000);
   }
 
@@ -315,45 +366,56 @@ void movemotors2(){
 }
 
 void runm1(){//motor1
-  if(pidsc1<0){//let out
-    analogWrite (M1A, abs(pidsc1));
+  if(pidsc[0]<0){//let out
+    analogWrite (M1A, abs(pidsc[0]));
     analogWrite (M1B, 0);
   }
   else{//pull in
     analogWrite (M1A, 0);
-    analogWrite (M1B, abs(pidsc1));
+    analogWrite (M1B, abs(pidsc[0]));
   }
 }
 
 void runm2(){//motor2
-  if(pidsc2<0){//let out
+  if(pidsc[1]<0){//let out
     analogWrite (M2A, 0);
-    analogWrite (M2B, abs(pidsc2));
+    analogWrite (M2B, abs(pidsc[1]));
   }
   else{//pull in
-    analogWrite (M2A, abs(pidsc2));
+    analogWrite (M2A, abs(pidsc[1]));
     analogWrite (M2B, 0);
   }
 }
 
 void runm3(){//motor3
-  if(pidsc3<0){//let out
-    analogWrite (M3A, abs(pidsc3));
+  if(pidsc[2]<0){//let out
+    analogWrite (M3A, abs(pidsc[2]));
     analogWrite (M3B, 0);
   }
   else{//pull in
     analogWrite (M3A, 0);
-    analogWrite (M3B, abs(pidsc3));
+    analogWrite (M3B, abs(pidsc[2]));
   }
 }
 
 void runm4(){//motor4
-  if(pidsc4<0){//let out
+  if(pidsc[3]<0){//let out
     analogWrite (M4A, 0);
-    analogWrite (M4B, abs(pidsc4));
+    analogWrite (M4B, abs(pidsc[3]));
   }
   else{//pull in
-    analogWrite (M4A, abs(pidsc4));
+    analogWrite (M4A, abs(pidsc[3]));
     analogWrite (M4B, 0);
   }
+}
+
+void getXYZPosition(){
+  gradientDescent(moduleLocation, alpha, maxIterations, epsilon);
+
+  Serial.print("Module Location: ");
+  Serial.print(moduleLocation[0]);
+  Serial.print(", ");
+  Serial.print(moduleLocation[1]);
+  Serial.print(", ");
+  Serial.println(moduleLocation[2]);
 }
