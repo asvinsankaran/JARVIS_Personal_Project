@@ -46,7 +46,15 @@ float moduleLocation[3] = {100.0, 100.0, 100.0};//This is the xyz position of th
 float cornerLocations[4][3] = {{0,EW,0},{0,0,0},{NS,EW,0},{NS,0,0}};  // Coordinates of each corner
 volatile float wireRadii[4] = {1, 1, 1, 1};  
 
-float pidsc[4] = {0, 0, 0,0}
+
+float wireVectors[4][3] = {{0,0,0},{0,0,0},{0,0,0},{0,0,0}};
+float unitVector = 0;
+
+float dr[3] = {0,0,0};
+float calcpid[4] = {0,0,0,0};
+float maxpid = 0;
+
+float pidsc[4] = {0, 0, 0,0};
 // float pidsc[0] = 0;
 // float pidsc[1] = 0;
 // float pidsc[2] = 0;
@@ -232,10 +240,11 @@ void loop() {
           // wireRadii[1] = 17307;
           // wireRadii[2] = 35721;
           // wireRadii[3] = 35713;
-          wireRadii[0] = 17933;
-          wireRadii[1] = 190;
-          wireRadii[2] = 38132;
-          wireRadii[3] = 27614;
+
+          // wireRadii[0] = 17933;
+          // wireRadii[1] = 190;
+          // wireRadii[2] = 38132;
+          // wireRadii[3] = 27614;
           state = 14;
           break;
         default:
@@ -418,4 +427,27 @@ void getXYZPosition(){
   Serial.print(moduleLocation[1]);
   Serial.print(", ");
   Serial.println(moduleLocation[2]);
+}
+
+void dosomething(){
+  for (int j = 0; j <= 3; j++) {
+    wireVectors[j][0] = cornerLocations[j][0]-moduleLocation[0];
+    wireVectors[j][1] = cornerLocations[j][1]-moduleLocation[1];
+    wireVectors[j][2] = cornerLocations[j][2]-moduleLocation[2];
+    unitVector = sqrt(sq(abs(wireVectors[j][0]))+sq(abs(wireVectors[j][1]))+sq(abs(wireVectors[j][2])));
+    wireVectors[j][0] = wireVectors[j][0]/unitVector;
+    wireVectors[j][1] = wireVectors[j][1]/unitVector;
+    wireVectors[j][2] = wireVectors[j][2]/unitVector;
+  }
+  //output is 4 rows one for each corner, and columns are the xyz unit vector coordinates
+  for (int k = 0; k <=3; k++){
+    calcpid[k] = wireVectors[k][0]*dr[0]+wireVectors[k][1]*dr[1]+wireVectors[k][2]*dr[2];
+  }
+  maxpid = max(abs(calcpid[0]), abs(calcpid[1]));
+  maxpid = max(maxpid, abs(calcpid[2]));
+  maxpid = max(maxpid, abs(calcpid[3]));
+
+  for (int l = 0; l <= 3; l++){
+    pidsc[l] = calcpid[l]/abs(maxpid)*250;
+  }
 }
